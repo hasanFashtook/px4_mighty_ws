@@ -76,9 +76,10 @@ Px4MightyBridgeNode::Px4MightyBridgeNode(const rclcpp::NodeOptions & options)
     offboard_warmup_duration_sec_);
   RCLCPP_INFO(
     get_logger(),
-    "auto_takeoff=%s (altitude=%.2f m) accel_feedforward=%s auto_arm_and_offboard=%s enu_ned_conversion=%s",
+    "auto_takeoff=%s (altitude=%.2f m) accel_feedforward=%s yawspeed_feedforward=%s auto_arm_and_offboard=%s enu_ned_conversion=%s",
     auto_takeoff_ ? "true" : "false", takeoff_altitude_m_,
     enable_acceleration_feedforward_ ? "true" : "false",
+    enable_yawspeed_feedforward_ ? "true" : "false",
     auto_arm_and_offboard_ ? "true" : "false",
     enable_enu_ned_conversion_ ? "true" : "false");
 }
@@ -107,6 +108,8 @@ void Px4MightyBridgeNode::declareAndLoadParameters()
   takeoff_altitude_m_ = declare_parameter<double>("takeoff_altitude", 2.5);
   enable_acceleration_feedforward_ =
     declare_parameter<bool>("enable_acceleration_feedforward", true);
+  enable_yawspeed_feedforward_ =
+    declare_parameter<bool>("enable_yawspeed_feedforward", false);
   max_acceleration_m_s2_ =
     declare_parameter<double>("max_acceleration_m_s2", 5.0);
   publish_tf_ = declare_parameter<bool>("publish_tf", true);
@@ -711,7 +714,11 @@ void Px4MightyBridgeNode::publishSetpoint(
     msg.jerk[1] = static_cast<float>(j[1]);
     msg.jerk[2] = static_cast<float>(j[2]);
     msg.yaw = static_cast<float>(enuYawToNed(goal.yaw));
-    msg.yawspeed = static_cast<float>(-goal.dyaw);
+    if (enable_yawspeed_feedforward_) {
+      msg.yawspeed = static_cast<float>(-goal.dyaw);
+    } else {
+      msg.yawspeed = std::numeric_limits<float>::quiet_NaN();
+    }
   } else {
     msg.position[0] = static_cast<float>(goal.p.x);
     msg.position[1] = static_cast<float>(goal.p.y);
@@ -726,7 +733,11 @@ void Px4MightyBridgeNode::publishSetpoint(
     msg.jerk[1] = static_cast<float>(goal.j.y);
     msg.jerk[2] = static_cast<float>(goal.j.z);
     msg.yaw = static_cast<float>(goal.yaw);
-    msg.yawspeed = static_cast<float>(goal.dyaw);
+    if (enable_yawspeed_feedforward_) {
+      msg.yawspeed = static_cast<float>(goal.dyaw);
+    } else {
+      msg.yawspeed = std::numeric_limits<float>::quiet_NaN();
+    }
   }
 
   setpoint_pub_->publish(msg);

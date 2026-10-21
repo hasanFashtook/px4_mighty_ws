@@ -67,6 +67,13 @@ def _load_mighty_params(namespace, map_frame_id):
             "use_sim_time": True,
             "num_agents": 1,
             "visual_level": min(int(params.get("visual_level", 2)), 1),
+            # Realistic physical dimensions & safety clearances for Holybro x500 (500mm wheelbase + 10" props)
+            "drone_bbox": [0.8, 0.8, 0.6],
+            "inflation_hgp": 0.65,
+            "planner_Co": 0.25,
+            "mass": 2.0,
+            "f_min": 4.0,
+            "f_max": 40.0,
         }
     )
     # rclpy cannot infer the type of an empty list in a dict parameter.

@@ -32,3 +32,4 @@ px4_mighty_bridge_node:
 
     # Feedforward Control Mode (Position + Velocity + Acceleration)
     enable_acceleration_feedforward: true
+    enable_yawspeed_feedforward: false

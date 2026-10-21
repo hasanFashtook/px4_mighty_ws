@@ -144,6 +144,7 @@ private:
   double geofence_min_z_m_{0.2};
   double geofence_max_z_m_{10.0};
   bool enable_acceleration_feedforward_{true};
+  bool enable_yawspeed_feedforward_{false};
 
   // ---- ROS interfaces --------------------------------------------------
   rclcpp::Publisher<dynus_interfaces::msg::State>::SharedPtr state_pub_;
