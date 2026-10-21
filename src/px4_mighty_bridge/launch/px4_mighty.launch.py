@@ -133,6 +133,7 @@ def _launch_setup(context, *args, **kwargs):
                     "livox_frame_id": f"{namespace}/{namespace}_livox",
                     "auto_takeoff": LaunchConfiguration("auto_takeoff"),
                     "takeoff_altitude": LaunchConfiguration("takeoff_altitude"),
+                    "enable_acceleration_feedforward": LaunchConfiguration("enable_acceleration_feedforward"),
                 },
             ],
         )
@@ -283,6 +284,11 @@ def generate_launch_description():
                 "takeoff_altitude",
                 default_value="2.5",
                 description="Target altitude in meters for automatic takeoff",
+            ),
+            DeclareLaunchArgument(
+                "enable_acceleration_feedforward",
+                default_value="true",
+                description="Enable acceleration feedforward in offboard control mode (Position + Velocity + Acceleration)",
             ),
             OpaqueFunction(function=_launch_setup),
         ]

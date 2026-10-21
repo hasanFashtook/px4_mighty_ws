@@ -76,8 +76,9 @@ Px4MightyBridgeNode::Px4MightyBridgeNode(const rclcpp::NodeOptions & options)
     offboard_warmup_duration_sec_);
   RCLCPP_INFO(
     get_logger(),
-    "auto_takeoff=%s (altitude=%.2f m) auto_arm_and_offboard=%s enu_ned_conversion=%s",
+    "auto_takeoff=%s (altitude=%.2f m) accel_feedforward=%s auto_arm_and_offboard=%s enu_ned_conversion=%s",
     auto_takeoff_ ? "true" : "false", takeoff_altitude_m_,
+    enable_acceleration_feedforward_ ? "true" : "false",
     auto_arm_and_offboard_ ? "true" : "false",
     enable_enu_ned_conversion_ ? "true" : "false");
 }
@@ -104,6 +105,10 @@ void Px4MightyBridgeNode::declareAndLoadParameters()
     declare_parameter<bool>("auto_arm_and_offboard", false);
   auto_takeoff_ = declare_parameter<bool>("auto_takeoff", true);
   takeoff_altitude_m_ = declare_parameter<double>("takeoff_altitude", 2.5);
+  enable_acceleration_feedforward_ =
+    declare_parameter<bool>("enable_acceleration_feedforward", true);
+  max_acceleration_m_s2_ =
+    declare_parameter<double>("max_acceleration_m_s2", 5.0);
   publish_tf_ = declare_parameter<bool>("publish_tf", true);
   publish_odom_ = declare_parameter<bool>("publish_odom", true);
 
@@ -660,6 +665,15 @@ void Px4MightyBridgeNode::applySafetyLimits(
   goal.dyaw = std::clamp(
     goal.dyaw, -max_yaw_rate_rad_s_, max_yaw_rate_rad_s_);
 
+  const double accel_mag = std::sqrt(
+    goal.a.x * goal.a.x + goal.a.y * goal.a.y + goal.a.z * goal.a.z);
+  if (accel_mag > max_acceleration_m_s2_ && accel_mag > 1e-9) {
+    const double scale = max_acceleration_m_s2_ / accel_mag;
+    goal.a.x *= scale;
+    goal.a.y *= scale;
+    goal.a.z *= scale;
+  }
+
   // Keep ground-level hold commands on the ground while enforcing the
   // configured flight envelope for airborne targets.
   if (goal.p.z > 0.0) {
@@ -731,7 +745,7 @@ void Px4MightyBridgeNode::publishOffboardControlMode()
   msg.timestamp = nowUs();
   msg.position = true;
   msg.velocity = true;
-  msg.acceleration = false;
+  msg.acceleration = enable_acceleration_feedforward_;
   msg.attitude = false;
   msg.body_rate = false;
   msg.thrust_and_torque = false;

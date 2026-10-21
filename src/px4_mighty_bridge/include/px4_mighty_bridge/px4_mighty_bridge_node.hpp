@@ -139,9 +139,11 @@ private:
 
   double max_horizontal_velocity_m_s_{3.0};
   double max_vertical_velocity_m_s_{1.5};
+  double max_acceleration_m_s2_{5.0};
   double max_yaw_rate_rad_s_{1.0};
   double geofence_min_z_m_{0.2};
   double geofence_max_z_m_{10.0};
+  bool enable_acceleration_feedforward_{true};
 
   // ---- ROS interfaces --------------------------------------------------
   rclcpp::Publisher<dynus_interfaces::msg::State>::SharedPtr state_pub_;

@@ -20,6 +20,7 @@ px4_mighty_bridge_node:
     # Safety Bounds
     max_horizontal_velocity_m_s: 3.0
     max_vertical_velocity_m_s: 1.5
+    max_acceleration_m_s2: 5.0
     max_yaw_rate_rad_s: 1.0
     geofence_min_z_m: 0.2
     geofence_max_z_m: 10.0
@@ -28,3 +29,6 @@ px4_mighty_bridge_node:
     auto_takeoff: true
     takeoff_altitude: 2.5
     auto_arm_and_offboard: true
+
+    # Feedforward Control Mode (Position + Velocity + Acceleration)
+    enable_acceleration_feedforward: true
