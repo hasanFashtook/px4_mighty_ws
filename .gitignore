@@ -1,0 +1,21 @@
+# Colcon build artifacts
+build/
+install/
+log/
+
+# PX4 SITL runtime artifacts & symlinks
+etc
+fs/
+test_data
+
+# Python bytecode & cache
+__pycache__/
+*.pyc
+*.pyo
+
+# IDEs & System files
+.vscode/
+.idea/
+.DS_Store
+*~
+*.swp

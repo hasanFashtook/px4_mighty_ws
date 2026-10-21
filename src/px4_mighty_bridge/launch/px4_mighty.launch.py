@@ -1,0 +1,289 @@
+#!/usr/bin/env python3
+"""Bring up the PX4 <-> MIGHTY companion stack.
+
+PX4 SITL and Gazebo are started separately (see the workspace README and
+``specs/002-px4-mighty-integration/quickstart.md``) so that the simulator can
+live in its own terminal and use its own ``ROS_DOMAIN_ID``/``PX4_UXRCE_DDS_PORT``.
+
+This launch file starts:
+
+* Micro XRCE-DDS Agent (unless ``launch_agent:=false``)
+* ``px4_mighty_bridge_node``
+* ``ros_gz_bridge`` translating ``/lidar/points`` into PointCloud2
+* static transforms completing the ``map -> NX01/NX01_livox`` chain
+* ``global_mapper_ros`` (unless ``launch_mapping:=false``)
+* ``mighty`` (unless ``launch_planner:=false``)
+* optional RViz2 (``launch_rviz:=true``)
+"""
+
+import os
+import re
+
+import yaml
+from ament_index_python.packages import get_package_share_directory
+from launch import LaunchDescription
+from launch.actions import (
+    DeclareLaunchArgument,
+    ExecuteProcess,
+    IncludeLaunchDescription,
+    OpaqueFunction,
+    SetEnvironmentVariable,
+)
+from launch.conditions import IfCondition
+from launch.launch_description_sources import PythonLaunchDescriptionSource
+from launch.substitutions import LaunchConfiguration, PathJoinSubstitution
+from launch_ros.actions import Node
+from launch_ros.substitutions import FindPackageShare
+
+
+def _sanitize(value):
+    """Convert scientific-notation strings that rclcpp cannot infer."""
+    if isinstance(value, dict):
+        return {k: _sanitize(v) for k, v in value.items()}
+    if isinstance(value, list):
+        return [_sanitize(v) for v in value]
+    if isinstance(value, str):
+        if re.match(r"^[+-]?\d+([.]\d*)?[eE][+-]?\d+$", value):
+            try:
+                return float(value)
+            except ValueError:
+                pass
+    return value
+
+
+def _load_mighty_params(namespace, map_frame_id):
+    mighty_share = get_package_share_directory("mighty")
+    with open(os.path.join(mighty_share, "config", "mighty.yaml"), "r") as stream:
+        params = yaml.safe_load(stream)["mighty_node"]["ros__parameters"]
+
+    params = _sanitize(params)
+    # Gazebo Sim provides the state through the PX4 bridge; there is no fake_sim
+    # node and no Vicon converter in this stack.
+    params.update(
+        {
+            "sim_env": "gazebo",
+            "use_hardware": False,
+            "map_frame_id": map_frame_id,
+            "use_sim_time": True,
+            "num_agents": 1,
+            "visual_level": min(int(params.get("visual_level", 2)), 1),
+        }
+    )
+    # rclpy cannot infer the type of an empty list in a dict parameter.
+    return {k: v for k, v in params.items() if not (isinstance(v, list) and not v)}
+
+
+def _launch_setup(context, *args, **kwargs):
+    namespace = LaunchConfiguration("namespace").perform(context)
+    use_sim_time = LaunchConfiguration("use_sim_time").perform(context).lower() in ("true", "1")
+    map_frame_id = LaunchConfiguration("map_frame_id").perform(context)
+    ros_domain_id = LaunchConfiguration("ros_domain_id").perform(context)
+    gz_partition = LaunchConfiguration("gz_partition").perform(context)
+    agent_port = LaunchConfiguration("agent_port").perform(context)
+    agent_lib_path = LaunchConfiguration("agent_lib_path").perform(context)
+
+    actions = [
+        SetEnvironmentVariable("ROS_DOMAIN_ID", ros_domain_id),
+        SetEnvironmentVariable("FASTDDS_BUILTIN_TRANSPORTS", "UDPv4"),
+    ]
+    if gz_partition:
+        actions.append(SetEnvironmentVariable("GZ_PARTITION", gz_partition))
+
+    if LaunchConfiguration("launch_agent").perform(context).lower() in ("true", "1"):
+        env = {}
+        if agent_lib_path:
+            env["LD_LIBRARY_PATH"] = (
+                agent_lib_path + ":" + os.environ.get("LD_LIBRARY_PATH", "")
+            )
+        actions.append(
+            ExecuteProcess(
+                cmd=["MicroXRCEAgent", "udp4", "-p", agent_port],
+                additional_env=env,
+                output="screen",
+            )
+        )
+
+    actions.append(
+        IncludeLaunchDescription(
+            PythonLaunchDescriptionSource(
+                PathJoinSubstitution(
+                    [
+                        FindPackageShare("px4_mighty_bridge"),
+                        "launch",
+                        "ros_gz_bridge.launch.py",
+                    ]
+                )
+            )
+        )
+    )
+
+    actions.append(
+        Node(
+            package="px4_mighty_bridge",
+            executable="px4_mighty_bridge_node",
+            name="px4_mighty_bridge_node",
+            output="screen",
+            parameters=[
+                LaunchConfiguration("params_file"),
+                {
+                    "use_sim_time": use_sim_time,
+                    "drone_namespace": namespace,
+                    "world_frame_id": map_frame_id,
+                    "body_frame_id": f"{namespace}/base_link",
+                    "livox_frame_id": f"{namespace}/{namespace}_livox",
+                    "auto_takeoff": LaunchConfiguration("auto_takeoff"),
+                    "takeoff_altitude": LaunchConfiguration("takeoff_altitude"),
+                },
+            ],
+        )
+    )
+
+    # The bridge publishes map -> <ns>/base_link at 20 Hz.  These static
+    # transforms carry the LiDAR frame used by MIGHTY and global_mapper_ros,
+    # and expose the raw Gazebo frame for RViz.
+    actions.append(
+        Node(
+            package="tf2_ros",
+            executable="static_transform_publisher",
+            name="static_tf_base_link_to_livox",
+            output="screen",
+            parameters=[{"use_sim_time": use_sim_time}],
+            arguments=[
+                "--x", "0.12", "--y", "0", "--z", "0.26",
+                "--roll", "0", "--pitch", "0", "--yaw", "0",
+                "--frame-id", f"{namespace}/base_link",
+                "--child-frame-id", f"{namespace}/{namespace}_livox",
+            ],
+        )
+    )
+    actions.append(
+        Node(
+            package="tf2_ros",
+            executable="static_transform_publisher",
+            name="static_tf_livox_to_gz_frame",
+            output="screen",
+            parameters=[{"use_sim_time": use_sim_time}],
+            arguments=[
+                "--frame-id", f"{namespace}/{namespace}_livox",
+                "--child-frame-id", "livox_frame",
+            ],
+        )
+    )
+
+    actions.append(
+        IncludeLaunchDescription(
+            PythonLaunchDescriptionSource(
+                PathJoinSubstitution(
+                    [
+                        FindPackageShare("global_mapper_ros"),
+                        "launch",
+                        "global_mapper_node.launch.py",
+                    ]
+                )
+            ),
+            condition=IfCondition(LaunchConfiguration("launch_mapping")),
+            launch_arguments={
+                "quad": namespace,
+                "use_gazebo": "true",
+                "pose_topic": "state",
+                "odom_topic": "odom",
+            }.items(),
+        )
+    )
+
+    actions.append(
+        Node(
+            package="mighty",
+            executable="mighty",
+            name="mighty_node",
+            namespace=namespace,
+            output="screen",
+            emulate_tty=True,
+            parameters=[_load_mighty_params(namespace, map_frame_id)],
+            remappings=[("lidar_cloud_in", "/mid360_PointCloud2")],
+            arguments=["--ros-args", "--log-level", "info"],
+            condition=IfCondition(LaunchConfiguration("launch_planner")),
+        )
+    )
+
+    actions.append(
+        Node(
+            package="rviz2",
+            executable="rviz2",
+            name="rviz2",
+            output="screen",
+            parameters=[{"use_sim_time": use_sim_time}],
+            arguments=[
+                "-d",
+                os.path.join(
+                    get_package_share_directory("mighty"), "rviz", "mighty.rviz"
+                ),
+            ],
+            condition=IfCondition(LaunchConfiguration("launch_rviz")),
+        )
+    )
+
+    return actions
+
+
+def generate_launch_description():
+    return LaunchDescription(
+        [
+            DeclareLaunchArgument("use_sim_time", default_value="true"),
+            DeclareLaunchArgument("namespace", default_value="NX01"),
+            DeclareLaunchArgument(
+                "params_file",
+                default_value=PathJoinSubstitution(
+                    [
+                        FindPackageShare("px4_mighty_bridge"),
+                        "config",
+                        "bridge_params.yaml",
+                    ]
+                ),
+            ),
+            DeclareLaunchArgument(
+                "map_frame_id",
+                default_value="map",
+                description="World/map frame shared by the bridge and MIGHTY",
+            ),
+            DeclareLaunchArgument(
+                "ros_domain_id",
+                default_value=os.environ.get("ROS_DOMAIN_ID", "0"),
+                description="DDS domain used by all ROS 2 nodes in this stack",
+            ),
+            DeclareLaunchArgument(
+                "gz_partition",
+                default_value="",
+                description="Gazebo Transport partition used by PX4/Gazebo",
+            ),
+            DeclareLaunchArgument(
+                "agent_port",
+                default_value="8888",
+                description="UDP port of MicroXRCEAgent (must match PX4_UXRCE_DDS_PORT)",
+            ),
+            DeclareLaunchArgument(
+                "agent_lib_path",
+                default_value="/home/hasan-fashtouk/code/lib",
+                description=(
+                    "Directory containing the libtinyxml2.so.10 compatibility "
+                    "library required by MicroXRCEAgent (set empty if the "
+                    "system provides it)"
+                ),
+            ),
+            DeclareLaunchArgument("launch_agent", default_value="true"),
+            DeclareLaunchArgument("launch_mapping", default_value="true"),
+            DeclareLaunchArgument("launch_planner", default_value="true"),
+            DeclareLaunchArgument("launch_rviz", default_value="false"),
+            DeclareLaunchArgument(
+                "auto_takeoff",
+                default_value="true",
+                description="Automatically arm, takeoff, and transition to offboard mode",
+            ),
+            DeclareLaunchArgument(
+                "takeoff_altitude",
+                default_value="2.5",
+                description="Target altitude in meters for automatic takeoff",
+            ),
+            OpaqueFunction(function=_launch_setup),
+        ]
+    )
