@@ -76,10 +76,11 @@ Px4MightyBridgeNode::Px4MightyBridgeNode(const rclcpp::NodeOptions & options)
     offboard_warmup_duration_sec_);
   RCLCPP_INFO(
     get_logger(),
-    "auto_takeoff=%s (altitude=%.2f m) accel_feedforward=%s yawspeed_feedforward=%s auto_arm_and_offboard=%s enu_ned_conversion=%s",
+    "auto_takeoff=%s (altitude=%.2f m) accel_feedforward=%s yawspeed_feedforward=%s yaw_mode=%s auto_arm_and_offboard=%s enu_ned_conversion=%s",
     auto_takeoff_ ? "true" : "false", takeoff_altitude_m_,
     enable_acceleration_feedforward_ ? "true" : "false",
     enable_yawspeed_feedforward_ ? "true" : "false",
+    yaw_mode_.c_str(),
     auto_arm_and_offboard_ ? "true" : "false",
     enable_enu_ned_conversion_ ? "true" : "false");
 }
@@ -110,10 +111,28 @@ void Px4MightyBridgeNode::declareAndLoadParameters()
     declare_parameter<bool>("enable_acceleration_feedforward", true);
   enable_yawspeed_feedforward_ =
     declare_parameter<bool>("enable_yawspeed_feedforward", false);
+  yaw_mode_ = declare_parameter<std::string>("yaw_mode", "none");
+  fixed_yaw_rad_ = declare_parameter<double>("fixed_yaw_rad", 0.0);
   max_acceleration_m_s2_ =
     declare_parameter<double>("max_acceleration_m_s2", 5.0);
   publish_tf_ = declare_parameter<bool>("publish_tf", true);
   publish_odom_ = declare_parameter<bool>("publish_odom", true);
+  publish_setpoint_marker_ =
+    declare_parameter<bool>("publish_setpoint_marker", true);
+  setpoint_marker_topic_ = declare_parameter<std::string>(
+    "setpoint_marker_topic", nsTopic("desired_setpoint_marker"));
+  setpoint_marker_color_rgb_ = declare_parameter<std::vector<double>>(
+    "setpoint_marker_color_rgb", std::vector<double>{1.0, 0.08, 0.58});
+  setpoint_marker_scale_ =
+    declare_parameter<double>("setpoint_marker_scale", 0.35);
+  publish_velocity_text_ =
+    declare_parameter<bool>("publish_velocity_text", true);
+  velocity_text_topic_ = declare_parameter<std::string>(
+    "velocity_text_topic", nsTopic("drone_speed_text"));
+  velocity_text_offset_z_ =
+    declare_parameter<double>("velocity_text_offset_z", 0.65);
+  velocity_text_scale_ =
+    declare_parameter<double>("velocity_text_scale", 0.35);
 
   max_horizontal_velocity_m_s_ =
     declare_parameter<double>("max_horizontal_velocity_m_s", 3.0);
@@ -194,6 +213,14 @@ void Px4MightyBridgeNode::createRosInterfaces()
 
   setpoint_pub_ = create_publisher<px4_msgs::msg::TrajectorySetpoint>(
     px4_setpoint_topic_, px4_qos);
+  if (publish_setpoint_marker_) {
+    setpoint_marker_pub_ = create_publisher<visualization_msgs::msg::Marker>(
+      setpoint_marker_topic_, rclcpp::QoS(10));
+  }
+  if (publish_velocity_text_) {
+    velocity_text_pub_ = create_publisher<visualization_msgs::msg::Marker>(
+      velocity_text_topic_, rclcpp::QoS(10));
+  }
   offboard_mode_pub_ = create_publisher<px4_msgs::msg::OffboardControlMode>(
     px4_offboard_mode_topic_, px4_qos);
   vehicle_command_pub_ = create_publisher<px4_msgs::msg::VehicleCommand>(
@@ -713,12 +740,6 @@ void Px4MightyBridgeNode::publishSetpoint(
     msg.jerk[0] = static_cast<float>(j[0]);
     msg.jerk[1] = static_cast<float>(j[1]);
     msg.jerk[2] = static_cast<float>(j[2]);
-    msg.yaw = static_cast<float>(enuYawToNed(goal.yaw));
-    if (enable_yawspeed_feedforward_) {
-      msg.yawspeed = static_cast<float>(-goal.dyaw);
-    } else {
-      msg.yawspeed = std::numeric_limits<float>::quiet_NaN();
-    }
   } else {
     msg.position[0] = static_cast<float>(goal.p.x);
     msg.position[1] = static_cast<float>(goal.p.y);
@@ -732,15 +753,68 @@ void Px4MightyBridgeNode::publishSetpoint(
     msg.jerk[0] = static_cast<float>(goal.j.x);
     msg.jerk[1] = static_cast<float>(goal.j.y);
     msg.jerk[2] = static_cast<float>(goal.j.z);
-    msg.yaw = static_cast<float>(goal.yaw);
-    if (enable_yawspeed_feedforward_) {
-      msg.yawspeed = static_cast<float>(goal.dyaw);
+  }
+
+  // Handle yaw setpoint according to yaw_mode
+  if (yaw_mode_ == "none" || yaw_mode_ == "nan") {
+    // Do not send yaw to PX4: PX4 maintains its current orientation
+    msg.yaw = std::numeric_limits<float>::quiet_NaN();
+    msg.yawspeed = std::numeric_limits<float>::quiet_NaN();
+  } else if (yaw_mode_ == "zero") {
+    // Send fixed yaw = 0.0 to PX4
+    msg.yaw = 0.0f;
+    msg.yawspeed = 0.0f;
+  } else if (yaw_mode_ == "fixed") {
+    if (enable_enu_ned_conversion_) {
+      msg.yaw = static_cast<float>(enuYawToNed(fixed_yaw_rad_));
     } else {
-      msg.yawspeed = std::numeric_limits<float>::quiet_NaN();
+      msg.yaw = static_cast<float>(fixed_yaw_rad_);
+    }
+    msg.yawspeed = 0.0f;
+  } else {
+    // "follow": follow planned yaw from MIGHTY
+    if (enable_enu_ned_conversion_) {
+      msg.yaw = static_cast<float>(enuYawToNed(goal.yaw));
+      if (enable_yawspeed_feedforward_) {
+        msg.yawspeed = static_cast<float>(-goal.dyaw);
+      } else {
+        msg.yawspeed = std::numeric_limits<float>::quiet_NaN();
+      }
+    } else {
+      msg.yaw = static_cast<float>(goal.yaw);
+      if (enable_yawspeed_feedforward_) {
+        msg.yawspeed = static_cast<float>(goal.dyaw);
+      } else {
+        msg.yawspeed = std::numeric_limits<float>::quiet_NaN();
+      }
     }
   }
 
   setpoint_pub_->publish(msg);
+
+  if (publish_setpoint_marker_ && setpoint_marker_pub_) {
+    publishSetpointMarker(goal);
+  }
+
+  if (publish_velocity_text_ && velocity_text_pub_ && has_odom_) {
+    const double v_des = std::sqrt(
+      goal.v.x * goal.v.x + goal.v.y * goal.v.y + goal.v.z * goal.v.z);
+    double v_act = 0.0;
+    Vector3 drone_pos{0.0, 0.0, 0.0};
+    {
+      std::lock_guard<std::mutex> lock(state_mutex_);
+      v_act = std::sqrt(
+        latest_odom_.velocity[0] * latest_odom_.velocity[0] +
+        latest_odom_.velocity[1] * latest_odom_.velocity[1] +
+        latest_odom_.velocity[2] * latest_odom_.velocity[2]);
+      Vector3 p_ned{
+        static_cast<double>(latest_odom_.position[0]),
+        static_cast<double>(latest_odom_.position[1]),
+        static_cast<double>(latest_odom_.position[2])};
+      drone_pos = enable_enu_ned_conversion_ ? nedToEnu(p_ned) : p_ned;
+    }
+    publishVelocityTextMarker(drone_pos, v_act, v_des);
+  }
 
   if (source == SetpointSource::kHold) {
     RCLCPP_DEBUG_THROTTLE(
@@ -748,6 +822,76 @@ void Px4MightyBridgeNode::publishSetpoint(
       "publishing position-hold setpoint at NED (%.2f, %.2f, %.2f)",
       msg.position[0], msg.position[1], msg.position[2]);
   }
+}
+
+void Px4MightyBridgeNode::publishSetpointMarker(
+  const dynus_interfaces::msg::Goal & goal)
+{
+  visualization_msgs::msg::Marker marker;
+  marker.header.stamp = this->now();
+  marker.header.frame_id = world_frame_id_;
+  marker.ns = "px4_desired_setpoint";
+  marker.id = 0;
+  marker.type = visualization_msgs::msg::Marker::SPHERE;
+  marker.action = visualization_msgs::msg::Marker::ADD;
+
+  marker.pose.position.x = goal.p.x;
+  marker.pose.position.y = goal.p.y;
+  marker.pose.position.z = goal.p.z;
+  marker.pose.orientation.w = 1.0;
+  marker.pose.orientation.x = 0.0;
+  marker.pose.orientation.y = 0.0;
+  marker.pose.orientation.z = 0.0;
+
+  const double s = std::max(0.05, setpoint_marker_scale_);
+  marker.scale.x = s;
+  marker.scale.y = s;
+  marker.scale.z = s;
+
+  if (setpoint_marker_color_rgb_.size() >= 3) {
+    marker.color.r = static_cast<float>(setpoint_marker_color_rgb_[0]);
+    marker.color.g = static_cast<float>(setpoint_marker_color_rgb_[1]);
+    marker.color.b = static_cast<float>(setpoint_marker_color_rgb_[2]);
+  } else {
+    marker.color.r = 1.0f;
+    marker.color.g = 0.08f;
+    marker.color.b = 0.58f;
+  }
+  marker.color.a = 0.9f;
+
+  setpoint_marker_pub_->publish(marker);
+}
+
+void Px4MightyBridgeNode::publishVelocityTextMarker(
+  const Vector3 & drone_pos_enu, double v_act, double v_des)
+{
+  visualization_msgs::msg::Marker marker;
+  marker.header.stamp = this->now();
+  marker.header.frame_id = world_frame_id_;
+  marker.ns = "drone_speed";
+  marker.id = 0;
+  marker.type = visualization_msgs::msg::Marker::TEXT_VIEW_FACING;
+  marker.action = visualization_msgs::msg::Marker::ADD;
+
+  marker.pose.position.x = drone_pos_enu[0];
+  marker.pose.position.y = drone_pos_enu[1];
+  marker.pose.position.z = drone_pos_enu[2] + velocity_text_offset_z_;
+  marker.pose.orientation.w = 1.0;
+
+  marker.scale.z = std::max(0.1, velocity_text_scale_);
+
+  // Bright yellow text for clear visibility against all backgrounds
+  marker.color.r = 1.0f;
+  marker.color.g = 0.92f;
+  marker.color.b = 0.15f;
+  marker.color.a = 1.0f;
+
+  std::ostringstream ss;
+  ss << std::fixed << std::setprecision(2);
+  ss << "v: " << v_act << " m/s (cmd: " << v_des << " m/s)";
+  marker.text = ss.str();
+
+  velocity_text_pub_->publish(marker);
 }
 
 void Px4MightyBridgeNode::publishOffboardControlMode()

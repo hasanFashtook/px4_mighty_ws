@@ -20,6 +20,7 @@ find_package(px4_msgs REQUIRED)
 find_package(tf2 REQUIRED)
 find_package(tf2_ros REQUIRED)
 find_package(tf2_geometry_msgs REQUIRED)
+find_package(visualization_msgs REQUIRED)
 
 include_directories(include)
 
@@ -64,6 +65,7 @@ target_link_libraries(px4_mighty_bridge_node
   ${px4_msgs_TARGETS}
   ${sensor_msgs_TARGETS}
   ${std_srvs_TARGETS}
+  ${visualization_msgs_TARGETS}
   tf2::tf2
   tf2_ros::tf2_ros
 )

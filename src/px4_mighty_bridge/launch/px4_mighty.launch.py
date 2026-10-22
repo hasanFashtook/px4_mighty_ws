@@ -141,6 +141,7 @@ def _launch_setup(context, *args, **kwargs):
                     "auto_takeoff": LaunchConfiguration("auto_takeoff"),
                     "takeoff_altitude": LaunchConfiguration("takeoff_altitude"),
                     "enable_acceleration_feedforward": LaunchConfiguration("enable_acceleration_feedforward"),
+                    "yaw_mode": LaunchConfiguration("yaw_mode"),
                 },
             ],
         )
@@ -296,6 +297,11 @@ def generate_launch_description():
                 "enable_acceleration_feedforward",
                 default_value="true",
                 description="Enable acceleration feedforward in offboard control mode (Position + Velocity + Acceleration)",
+            ),
+            DeclareLaunchArgument(
+                "yaw_mode",
+                default_value="none",
+                description="Yaw control mode for PX4 setpoint: 'none' (do not send yaw, keep heading fixed), 'zero' (fixed yaw = 0.0), or 'follow' (follow MIGHTY's planned yaw)",
             ),
             OpaqueFunction(function=_launch_setup),
         ]

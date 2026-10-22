@@ -28,6 +28,7 @@
 #include <px4_msgs/msg/vehicle_status.hpp>
 
 #include <tf2_ros/transform_broadcaster.hpp>
+#include <visualization_msgs/msg/marker.hpp>
 
 #include "px4_mighty_bridge/frame_transforms.hpp"
 #include "px4_mighty_bridge/timestamp_sync.hpp"
@@ -98,6 +99,9 @@ private:
     double elapsed_sec, dynus_interfaces::msg::Goal & goal) const;
   void applySafetyLimits(dynus_interfaces::msg::Goal & goal) const;
   void publishSetpoint(const dynus_interfaces::msg::Goal & goal, SetpointSource source);
+  void publishSetpointMarker(const dynus_interfaces::msg::Goal & goal);
+  void publishVelocityTextMarker(
+    const Vector3 & drone_pos_enu, double v_act, double v_des);
   void publishOffboardControlMode();
   void sendVehicleCommand(
     uint32_t command, float param1 = 0.0F, float param2 = 0.0F,
@@ -145,11 +149,23 @@ private:
   double geofence_max_z_m_{10.0};
   bool enable_acceleration_feedforward_{true};
   bool enable_yawspeed_feedforward_{false};
+  std::string yaw_mode_{"none"};
+  double fixed_yaw_rad_{0.0};
+  bool publish_setpoint_marker_{true};
+  std::string setpoint_marker_topic_;
+  std::vector<double> setpoint_marker_color_rgb_{1.0, 0.08, 0.58};
+  double setpoint_marker_scale_{0.35};
+  bool publish_velocity_text_{true};
+  std::string velocity_text_topic_;
+  double velocity_text_offset_z_{0.65};
+  double velocity_text_scale_{0.35};
 
   // ---- ROS interfaces --------------------------------------------------
   rclcpp::Publisher<dynus_interfaces::msg::State>::SharedPtr state_pub_;
   rclcpp::Publisher<nav_msgs::msg::Odometry>::SharedPtr odom_pub_;
   rclcpp::Publisher<px4_msgs::msg::TrajectorySetpoint>::SharedPtr setpoint_pub_;
+  rclcpp::Publisher<visualization_msgs::msg::Marker>::SharedPtr setpoint_marker_pub_;
+  rclcpp::Publisher<visualization_msgs::msg::Marker>::SharedPtr velocity_text_pub_;
   rclcpp::Publisher<px4_msgs::msg::OffboardControlMode>::SharedPtr offboard_mode_pub_;
   rclcpp::Publisher<px4_msgs::msg::VehicleCommand>::SharedPtr vehicle_command_pub_;
 

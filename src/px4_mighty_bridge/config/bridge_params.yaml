@@ -33,3 +33,20 @@ px4_mighty_bridge_node:
     # Feedforward Control Mode (Position + Velocity + Acceleration)
     enable_acceleration_feedforward: true
     enable_yawspeed_feedforward: false
+
+    # Yaw Control Mode:
+    # "none"   - Do not send desired yaw to PX4 (sets yaw to NaN; PX4 maintains current heading without rotating)
+    # "zero"   - Send fixed yaw = 0.0 to PX4
+    # "follow" - Follow the planned yaw from MIGHTY
+    yaw_mode: "none"
+    fixed_yaw_rad: 0.0
+
+    # Desired Setpoint Visualization Marker in RViz2
+    publish_setpoint_marker: true
+    setpoint_marker_color_rgb: [1.0, 0.08, 0.58]  # Deep Pink / Vibrant Magenta sphere
+    setpoint_marker_scale: 0.35                    # Sphere diameter in meters
+
+    # Drone Velocity Text Marker in RViz2 (shows v_actual and v_commanded)
+    publish_velocity_text: true
+    velocity_text_offset_z: 0.65                   # Height offset above drone in meters
+    velocity_text_scale: 0.35                      # Text height in meters

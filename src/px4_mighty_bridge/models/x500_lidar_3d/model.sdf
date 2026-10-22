@@ -40,7 +40,7 @@
         </material>
       </visual>
       <sensor name="lidar_3d" type="gpu_lidar">
-        <gz_frame_id>livox_frame</gz_frame_id>
+        <frame_id>livox_frame</frame_id>
         <pose>0 0 0 0 0 0</pose>
         <topic>/lidar/points</topic>
         <update_rate>20</update_rate>
