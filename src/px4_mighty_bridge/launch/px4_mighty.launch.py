@@ -90,8 +90,8 @@ def _load_mighty_params(namespace, map_frame_id):
 
             # --- Dynamic Limits & Autopilot Tracking Margin ---
             "mass": 2.0,  # Realistic Holybro x500 mass with battery & sensor payload
-            "v_max": 2.0,  # Controlled cruise speed to guarantee autopilot tracking
-            "a_max": 5.0,  # Gentle acceleration to eliminate overshoot at turns
+            "v_max": 6.0,  # Controlled cruise speed to guarantee autopilot tracking
+            "a_max": 8.0,  # Gentle acceleration to eliminate overshoot at turns
             "j_max": 10.0,  # Controlled jerk
             "tilt_max_rad": 0.436,  # 25 deg max tilt (keeps camera oriented forward, prevents altitude sag)
             "f_min": 4.0,  # [N] Minimum thrust limit
@@ -250,7 +250,7 @@ def _launch_setup(context, *args, **kwargs):
             arguments=[
                 "-d",
                 os.path.join(
-                    get_package_share_directory("mighty"), "rviz", "mighty.rviz"
+                    get_package_share_directory("px4_mighty_bridge"), "rviz", "px4_mighty.rviz"
                 ),
             ],
             condition=IfCondition(LaunchConfiguration("launch_rviz")),

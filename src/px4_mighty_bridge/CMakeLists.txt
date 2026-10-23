@@ -98,7 +98,7 @@ install(DIRECTORY include/
   DESTINATION include
 )
 
-install(DIRECTORY config launch models worlds
+install(DIRECTORY config launch models worlds rviz
   DESTINATION share/${PROJECT_NAME}
 )
 
