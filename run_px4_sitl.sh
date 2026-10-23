@@ -41,6 +41,17 @@ for w in "${BRIDGE_WORLDS_DIR}"/*.sdf; do
     fi
 done
 
+# Automatically sync model symlinks from px4_mighty_bridge into PX4 simulation models
+BRIDGE_MODELS_DIR="${SCRIPT_DIR}/src/px4_mighty_bridge/models"
+PX4_MODELS_DIR="${PX4_DIR}/Tools/simulation/gz/models"
+mkdir -p "${PX4_MODELS_DIR}"
+for m in "${BRIDGE_MODELS_DIR}"/*; do
+    if [ -d "$m" ] || [ -L "$m" ]; then
+        mname="$(basename "$m")"
+        ln -sfn "$m" "${PX4_MODELS_DIR}/${mname}"
+    fi
+done
+
 # Ensure no stale PX4 or Gazebo instances are lingering in the background
 echo "Cleaning up any previous PX4 / Gazebo instances..."
 killall -9 px4 gz-sim-main 2>/dev/null || true
