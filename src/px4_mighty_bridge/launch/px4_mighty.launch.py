@@ -61,19 +61,44 @@ def _load_mighty_params(namespace, map_frame_id):
     # node and no Vicon converter in this stack.
     params.update(
         {
+            # --- Simulation & Framework Core ---
             "sim_env": "gazebo",
             "use_hardware": False,
             "map_frame_id": map_frame_id,
             "use_sim_time": True,
             "num_agents": 1,
             "visual_level": min(int(params.get("visual_level", 2)), 1),
-            # Realistic physical dimensions & safety clearances for Holybro x500 (500mm wheelbase + 10" props)
-            "drone_bbox": [0.8, 0.8, 0.6],
-            "inflation_hgp": 0.65,
-            "planner_Co": 0.25,
-            "mass": 2.0,
-            "f_min": 4.0,
-            "f_max": 40.0,
+            "default_goal_z": 2.0,
+            "z_min": 1.2,  # Prevent dipping near ground, tree roots, or floor clutter
+
+            # --- Physical Footprint & Convex Corridor Safety (SFC) ---
+            # Holybro x500: 500mm wheelbase + 10" props = ~760mm tip-to-tip span.
+            # drone_radius = bbox[0] / 2.0 = 0.425m inflation for decomp polyhedra.
+            "drone_bbox": [0.85, 0.85, 0.6],
+            "sfc_use_unknown_as_obstacle": True,  # Do not carve corridors into unmapped / occluded voxels
+
+            # --- Global Planning Obstacle Clearance (HGP / A*) ---
+            "inflation_hgp": 0.70,  # Inflate static obstacles by 0.70m during A* search
+            "los_cells": 5,  # 5 cells * 0.15m = 0.75m clearance for LOS shortcutting
+            "static_heat_Hmax": 80.0,  # Stronger repulsive heat field around obstacles
+            "static_heat_rmax_m": 2.5,  # Heat repulsion extends 2.5m from obstacle boundary
+
+            # --- Local Trajectory Optimization (L-BFGS) ---
+            "planner_Co": 0.30,  # 0.30m safety clearance inside corridor walls (as in hw_mighty)
+            "stat_weight": 5.0e+3,  # High penalty weight for approaching corridor boundaries
+            "jerk_weight": 2.0e-1,  # Extra smoothness penalty to prevent sudden aggressive jerks
+
+            # --- Dynamic Limits & Autopilot Tracking Margin ---
+            "mass": 2.0,  # Realistic Holybro x500 mass with battery & sensor payload
+            "v_max": 1.8,  # Controlled cruise speed to guarantee autopilot tracking
+            "a_max": 2.5,  # Gentle acceleration to eliminate overshoot at turns
+            "j_max": 5.0,  # Controlled jerk
+            "tilt_max_rad": 0.436,  # 25 deg max tilt (keeps camera oriented forward, prevents altitude sag)
+            "f_min": 4.0,  # [N] Minimum thrust limit
+            "f_max": 40.0,  # [N] Maximum thrust limit
+            "dyn_constr_vel_weight": 5.0e+3,  # Strict dynamic limits enforcement
+            "dyn_constr_acc_weight": 5.0e+3,
+            "dyn_constr_jerk_weight": 5.0e+3,
         }
     )
     # rclpy cannot infer the type of an empty list in a dict parameter.
