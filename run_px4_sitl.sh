@@ -23,12 +23,23 @@ for arg in "$@"; do
             HEADLESS=1
             ;;
         *)
-            WORLD="$arg"
+            WORLD="${arg%.*}"
             ;;
     esac
 done
 
 export HEADLESS
+
+# Automatically sync world symlinks from px4_mighty_bridge into PX4 simulation worlds
+BRIDGE_WORLDS_DIR="${SCRIPT_DIR}/src/px4_mighty_bridge/worlds"
+PX4_WORLDS_DIR="${PX4_DIR}/Tools/simulation/gz/worlds"
+mkdir -p "${PX4_WORLDS_DIR}"
+for w in "${BRIDGE_WORLDS_DIR}"/*.sdf; do
+    if [ -f "$w" ]; then
+        fname="$(basename "$w")"
+        ln -sf "$w" "${PX4_WORLDS_DIR}/${fname}"
+    fi
+done
 
 # Ensure no stale PX4 or Gazebo instances are lingering in the background
 echo "Cleaning up any previous PX4 / Gazebo instances..."
