@@ -55,3 +55,6 @@ param set-default COM_RCL_EXCEPT 7
 param set-default EKF2_BCOEF_X 0.0
 param set-default EKF2_BCOEF_Y 0.0
 param set-default EKF2_MCOEF 0.12
+
+# Disable battery drain in SITL simulation
+param set-default SIM_BAT_DRAIN 0

@@ -12,7 +12,7 @@ px4_mighty_bridge_node:
     heartbeat_rate_hz: 20.0
     setpoint_stream_rate_hz: 20.0
     watchdog_timeout_ms: 1000
-    offboard_warmup_duration_sec: 1.0
+    offboard_warmup_duration_sec: 3.0
 
     # Coordinate Mapping
     enable_enu_ned_conversion: true

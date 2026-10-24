@@ -24,6 +24,7 @@
 #include <px4_msgs/msg/offboard_control_mode.hpp>
 #include <px4_msgs/msg/trajectory_setpoint.hpp>
 #include <px4_msgs/msg/vehicle_command.hpp>
+#include <px4_msgs/msg/vehicle_global_position.hpp>
 #include <px4_msgs/msg/vehicle_odometry.hpp>
 #include <px4_msgs/msg/vehicle_status.hpp>
 
@@ -70,6 +71,7 @@ private:
   // ---- subscriptions ---------------------------------------------------
   void odometryCallback(const px4_msgs::msg::VehicleOdometry::SharedPtr msg);
   void vehicleStatusCallback(const px4_msgs::msg::VehicleStatus::SharedPtr msg);
+  void vehicleGlobalPositionCallback(const px4_msgs::msg::VehicleGlobalPosition::SharedPtr msg);
   void goalCallback(const dynus_interfaces::msg::Goal::SharedPtr msg);
   void trajectoryCallback(const dynus_interfaces::msg::Trajectory::SharedPtr msg);
   void handleEngage(
@@ -103,10 +105,11 @@ private:
   void publishVelocityTextMarker(
     const Vector3 & drone_pos_enu, double v_act, double v_des);
   void publishOffboardControlMode();
+  static constexpr float kNan = std::numeric_limits<float>::quiet_NaN();
   void sendVehicleCommand(
-    uint32_t command, float param1 = 0.0F, float param2 = 0.0F,
-    float param3 = 0.0F, float param4 = 0.0F, float param5 = 0.0F,
-    float param6 = 0.0F, float param7 = 0.0F);
+    uint32_t command, float param1 = kNan, float param2 = kNan,
+    float param3 = kNan, float param4 = kNan, float param5 = kNan,
+    float param6 = kNan, float param7 = kNan);
   void manageAutoFlight();
   bool warmupComplete() const;
   uint64_t nowUs() const;
@@ -124,6 +127,7 @@ private:
 
   std::string px4_odometry_topic_{"/fmu/out/vehicle_odometry"};
   std::string px4_status_topic_{"/fmu/out/vehicle_status"};
+  std::string px4_global_position_topic_{"/fmu/out/vehicle_global_position"};
   std::string px4_setpoint_topic_{"/fmu/in/trajectory_setpoint"};
   std::string px4_offboard_mode_topic_{"/fmu/in/offboard_control_mode"};
   std::string px4_vehicle_command_topic_{"/fmu/in/vehicle_command"};
@@ -175,6 +179,7 @@ private:
   // example /fmu/out/vehicle_status_v4).  Subscribe to both spellings so the
   // bridge works with the contract topic and with versioned PX4 builds.
   rclcpp::Subscription<px4_msgs::msg::VehicleStatus>::SharedPtr status_versioned_sub_;
+  rclcpp::Subscription<px4_msgs::msg::VehicleGlobalPosition>::SharedPtr global_position_sub_;
   rclcpp::Subscription<dynus_interfaces::msg::Goal>::SharedPtr goal_sub_;
   rclcpp::Subscription<dynus_interfaces::msg::Trajectory>::SharedPtr trajectory_sub_;
 
@@ -204,6 +209,11 @@ private:
 
   px4_msgs::msg::VehicleStatus latest_status_;
   bool has_status_{false};
+
+  px4_msgs::msg::VehicleGlobalPosition latest_global_pos_;
+  bool has_global_pos_{false};
+  double takeoff_reference_amsl_{0.0};
+  bool initial_takeoff_amsl_set_{false};
 
   Watchdog watchdog_;
   mutable TimestampSynchronizer timestamp_sync_;
