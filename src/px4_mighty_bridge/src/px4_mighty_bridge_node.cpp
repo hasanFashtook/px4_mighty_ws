@@ -171,8 +171,6 @@ void Px4MightyBridgeNode::declareAndLoadParameters()
     "px4_odometry_topic", "/fmu/out/vehicle_odometry");
   px4_status_topic_ = declare_parameter<std::string>(
     "px4_status_topic", "/fmu/out/vehicle_status");
-  px4_global_position_topic_ = declare_parameter<std::string>(
-    "px4_global_position_topic", "/fmu/out/vehicle_global_position");
   px4_setpoint_topic_ = declare_parameter<std::string>(
     "px4_setpoint_topic", "/fmu/in/trajectory_setpoint");
   px4_offboard_mode_topic_ = declare_parameter<std::string>(
@@ -239,10 +237,6 @@ void Px4MightyBridgeNode::createRosInterfaces()
   status_versioned_sub_ = create_subscription<px4_msgs::msg::VehicleStatus>(
     px4_status_topic_ + "_v4", px4_qos,
     std::bind(&Px4MightyBridgeNode::vehicleStatusCallback, this,
-    std::placeholders::_1));
-  global_position_sub_ = create_subscription<px4_msgs::msg::VehicleGlobalPosition>(
-    px4_global_position_topic_, px4_qos,
-    std::bind(&Px4MightyBridgeNode::vehicleGlobalPositionCallback, this,
     std::placeholders::_1));
   goal_sub_ = create_subscription<dynus_interfaces::msg::Goal>(
     goal_topic_, planner_qos,
@@ -361,8 +355,22 @@ void Px4MightyBridgeNode::publishState(
 {
   // State is published directly from the odometry callback so that the
   // bridge processing latency stays below the 5 ms budget (SC-002).
+  const dynus_interfaces::msg::State state = odometryToState(msg);
+
+  if (auto_takeoff_ && !state_publication_started_.load()) {
+    const double current_z = state.pos.z;
+    if (!offboard_.load() && current_z < (takeoff_altitude_m_ - 0.4)) {
+      return;
+    }
+    state_publication_started_.store(true);
+    RCLCPP_INFO(
+      get_logger(),
+      "vehicle reached flight altitude (%.2f m); starting /%s/state stream to MIGHTY",
+      current_z, drone_namespace_.c_str());
+  }
+
   static std::atomic<uint64_t> published{0};
-  state_pub_->publish(odometryToState(msg));
+  state_pub_->publish(state);
   RCLCPP_INFO_THROTTLE(
     get_logger(), *get_clock(), 2000, "debug: state published count=%lu subscribers=%zu",
     static_cast<unsigned long>(published.fetch_add(1) + 1),
@@ -491,14 +499,6 @@ void Px4MightyBridgeNode::vehicleStatusCallback(
       get_logger(), *get_clock(), 5000,
       "pre-flight checks not yet passing; arming deferred");
   }
-}
-
-void Px4MightyBridgeNode::vehicleGlobalPositionCallback(
-  const px4_msgs::msg::VehicleGlobalPosition::SharedPtr msg)
-{
-  std::lock_guard<std::mutex> lock(state_mutex_);
-  latest_global_pos_ = *msg;
-  has_global_pos_ = true;
 }
 
 void Px4MightyBridgeNode::goalCallback(
@@ -643,6 +643,11 @@ Px4MightyBridgeNode::SetpointSource Px4MightyBridgeNode::selectSetpoint(
   goal.p.x = hold_position_[0];
   goal.p.y = hold_position_[1];
   goal.p.z = hold_position_[2];
+
+  // During auto-takeoff, ensure the hold altitude setpoint commands at least the target altitude
+  if (auto_takeoff_ && enable_enu_ned_conversion_ && goal.p.z < takeoff_altitude_m_) {
+    goal.p.z = takeoff_altitude_m_;
+  }
   goal.v.x = 0.0;
   goal.v.y = 0.0;
   goal.v.z = 0.0;
@@ -961,47 +966,32 @@ void Px4MightyBridgeNode::manageAutoFlight()
     return;
   }
 
-  // Auto flight and auto takeoff require valid odometry and vehicle status
-  if (!has_odom_ || !has_status_) {
-    return;
-  }
-
-  // Wait until PX4 pre-flight checks pass and no failsafe is active
-  if (!latest_status_.pre_flight_checks_pass || latest_status_.failsafe) {
-    RCLCPP_INFO_THROTTLE(
-      get_logger(), *get_clock(), 3000,
-      "auto-takeoff: waiting for PX4 pre-flight checks to pass (pre_flight_checks_pass=%s, failsafe=%s)...",
-      latest_status_.pre_flight_checks_pass ? "true" : "false",
-      latest_status_.failsafe ? "true" : "false");
-    return;
-  }
-
   const auto now = std::chrono::steady_clock::now();
   if ((now - last_command_send_time_) < std::chrono::milliseconds(1000)) {
     return;
   }
 
-  const double current_z = enable_enu_ned_conversion_ ? -latest_odom_.position[2] : latest_odom_.position[2];
+  double current_z = 0.0;
+  if (has_odom_) {
+    current_z = enable_enu_ned_conversion_ ? -latest_odom_.position[2] : latest_odom_.position[2];
+  }
 
   if (auto_takeoff_) {
     // Step 1: Arm vehicle if not armed
     if (!armed_.load()) {
-      RCLCPP_INFO(get_logger(), "auto-takeoff: pre-flight checks passed; arming vehicle...");
+      RCLCPP_INFO(get_logger(), "auto-takeoff: arming vehicle...");
       sendVehicleCommand(
         px4_msgs::msg::VehicleCommand::VEHICLE_CMD_COMPONENT_ARM_DISARM,
-        1.0F, 0.0F);
+        1.0F);
       last_command_send_time_ = now;
       auto_flight_state_ = AutoFlightState::kArming;
       return;
     }
 
     // Step 2: If armed and below takeoff altitude, send takeoff command
-    const bool reached_alt = (current_z >= (takeoff_altitude_m_ - 0.25));
-    const bool loitering_after_climb = (current_z >= 1.5 &&
-      latest_status_.nav_state != px4_msgs::msg::VehicleStatus::NAVIGATION_STATE_AUTO_TAKEOFF);
-
-    if (!reached_alt && !loitering_after_climb) {
-      if (latest_status_.nav_state == px4_msgs::msg::VehicleStatus::NAVIGATION_STATE_AUTO_TAKEOFF)
+    if (current_z < (takeoff_altitude_m_ - 0.4)) {
+      if (has_status_ &&
+          latest_status_.nav_state == px4_msgs::msg::VehicleStatus::NAVIGATION_STATE_AUTO_TAKEOFF)
       {
         RCLCPP_INFO_THROTTLE(
           get_logger(), *get_clock(), 2000,
@@ -1010,23 +1000,14 @@ void Px4MightyBridgeNode::manageAutoFlight()
         return;
       }
 
-      float target_alt_amsl = kNan;
-      if (has_global_pos_) {
-        if (!initial_takeoff_amsl_set_) {
-          takeoff_reference_amsl_ = latest_global_pos_.alt;
-          initial_takeoff_amsl_set_ = true;
-        }
-        target_alt_amsl = static_cast<float>(takeoff_reference_amsl_ + takeoff_altitude_m_);
-      }
-
       RCLCPP_INFO(
         get_logger(),
-        "auto-takeoff: sending TAKEOFF command to %.2f m AGL (current_alt=%.2f m, target_amsl=%.2f)...",
-        takeoff_altitude_m_, current_z, target_alt_amsl);
+        "auto-takeoff: sending TAKEOFF command (target_alt=%.2f m, current_alt=%.2f m)...",
+        takeoff_altitude_m_, current_z);
+      const float nan_val = std::numeric_limits<float>::quiet_NaN();
       sendVehicleCommand(
         px4_msgs::msg::VehicleCommand::VEHICLE_CMD_NAV_TAKEOFF,
-        kNan, kNan, kNan, kNan, kNan, kNan,
-        target_alt_amsl);
+        nan_val, nan_val, nan_val, nan_val, nan_val, nan_val, nan_val);
       last_command_send_time_ = now;
       auto_flight_state_ = AutoFlightState::kTakingOff;
       return;
@@ -1050,7 +1031,7 @@ void Px4MightyBridgeNode::manageAutoFlight()
     if (!armed_.load()) {
       sendVehicleCommand(
         px4_msgs::msg::VehicleCommand::VEHICLE_CMD_COMPONENT_ARM_DISARM,
-        1.0F, 0.0F);
+        1.0F);
       RCLCPP_INFO(get_logger(), "sent arm command");
     } else if (!offboard_.load()) {
       sendVehicleCommand(
@@ -1109,6 +1090,7 @@ void Px4MightyBridgeNode::handleDisarm(
   engage_requested_.store(false);
   setpoint_stream_enabled_.store(false);
   manual_override_.store(false);
+  state_publication_started_.store(false);
 
   sendVehicleCommand(
     px4_msgs::msg::VehicleCommand::VEHICLE_CMD_COMPONENT_ARM_DISARM,
