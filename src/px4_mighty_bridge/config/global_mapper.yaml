@@ -1,0 +1,38 @@
+/**:
+  ros__parameters:
+    global_frame: map
+    origin: [0.0, 0.0, 3.0]
+    world_dimensions: [20.0, 20.0, 3.0]
+    resolution: 0.2
+    radius_drone: 0.35
+    z_ground: 0.1
+    skip: 0
+    depth_max: 20.0
+    r1: 0.8
+    r2: 20.0
+    z_min_unknown: 0.1
+    z_max_unknown: 6.0
+
+    occupancy_grid:
+      init_value: 0.4
+      hit_inc: 0.99
+      miss_inc: -0.01
+      occupancy_threshold: 0.6
+      publish_occupancy_grid: true
+      publish_unknown_grid: true
+      publish_free_grid: false
+      clear_unknown_distance: 1.0
+
+    distance_grid:
+      truncation_distance: 6
+      publish_distance_grid: false
+
+    cost_grid:
+      publish_cost_grid: false
+      publish_path: false
+      inflation_distance: 4
+      altitude_weight: 20
+      inflation_weight: 0
+      unknown_weight: 20
+      obstacle_weight: 10000
+      target_altitude: 2.0

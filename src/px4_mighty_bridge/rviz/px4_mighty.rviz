@@ -6,11 +6,12 @@ Panels:
       Expanded:
         - /Common1/TF1/Frames1
         - /Benchmarking1/Trajectories1/Namespaces1
+        - /NX011
         - /NX011/Planning1/NX01 Traj1/Topic1
         - /NX011/Planning1/NX01 Actual Trajectory1/Topic1
+        - /NX011/Mapping1
         - /NX011/Mapping1/NX01 D435 PointCloud1/Topic1
         - /NX011/Mapping1/NX01 Lidar PointCloud1/Topic1
-        - /NX011/Others1
         - /NX041/Planning1
         - /NX01 SFC Whole1
       Splitter Ratio: 0.5051334500312805
@@ -491,7 +492,7 @@ Visualization Manager:
               Color: 153; 193; 241
               Color Transformer: FlatColor
               Decay Time: 0
-              Enabled: true
+              Enabled: false
               Invert Rainbow: false
               Max Color: 255; 255; 255
               Max Intensity: 4096
@@ -512,7 +513,7 @@ Visualization Manager:
                 Value: /NX01/unknown_grid
               Use Fixed Frame: true
               Use rainbow: true
-              Value: true
+              Value: false
             - Alpha: 1
               Autocompute Intensity Bounds: true
               Autocompute Value Bounds:
@@ -3001,10 +3002,10 @@ Visualization Manager:
       Invert Z Axis: false
       Name: Current View
       Near Clip Distance: 0.009999999776482582
-      Pitch: 1.5697963237762451
+      Pitch: 0.9697957634925842
       Target Frame: NX01/base_link
       Value: Orbit (rviz_default_plugins)
-      Yaw: 1.2032102346420288
+      Yaw: 3.218219518661499
     Saved: ~
 Window Geometry:
   Displays:

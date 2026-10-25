@@ -75,18 +75,18 @@ def _load_mighty_params(namespace, map_frame_id):
             # Holybro x500: 500mm wheelbase + 10" props = ~760mm tip-to-tip span.
             # drone_radius = bbox[0] / 2.0 = 0.425m inflation for decomp polyhedra.
             "drone_bbox": [0.85, 0.85, 0.6],
-            # "sfc_use_unknown_as_obstacle": True,  # Do not carve corridors into unmapped / occluded voxels
+            "sfc_use_unknown_as_obstacle": True,  # Do not carve corridors into unmapped / occluded voxels
 
             # --- Global Planning Obstacle Clearance (HGP / A*) ---
-            # "inflation_hgp": 0.70,  # Inflate static obstacles by 0.70m during A* search
-            # "los_cells": 5,  # 5 cells * 0.15m = 0.75m clearance for LOS shortcutting
-            # "static_heat_Hmax": 80.0,  # Stronger repulsive heat field around obstacles
-            # "static_heat_rmax_m": 2.5,  # Heat repulsion extends 2.5m from obstacle boundary
+            "inflation_hgp": 0.65,  # Inflate static obstacles by 0.65m during A* search
+            "los_cells": 5,  # 5 cells * 0.15m = 0.75m clearance for LOS shortcutting
+            "static_heat_Hmax": 80.0,  # Stronger repulsive heat field around obstacles
+            "static_heat_rmax_m": 2.5,  # Heat repulsion extends 2.5m from obstacle boundary
 
             # --- Local Trajectory Optimization (L-BFGS) ---
-            # "planner_Co": 0.30,  # 0.30m safety clearance inside corridor walls (as in hw_mighty)
-            # "stat_weight": 5.0e+3,  # High penalty weight for approaching corridor boundaries
-            # "jerk_weight": 2.0e-1,  # Extra smoothness penalty to prevent sudden aggressive jerks
+            "planner_Co": 0.25,  # 0.25m safety clearance inside corridor walls (prevents cutting corners)
+            "stat_weight": 5.0e+3,  # High penalty weight for approaching corridor boundaries
+            "jerk_weight": 2.0e-1,  # Extra smoothness penalty to prevent sudden aggressive jerks
 
             # --- Dynamic Limits & Autopilot Tracking Margin ---
             "mass": 2.0,  # Realistic Holybro x500 mass with battery & sensor payload
@@ -204,24 +204,41 @@ def _launch_setup(context, *args, **kwargs):
         )
     )
 
+    global_mapper_config = PathJoinSubstitution(
+        [
+            FindPackageShare("px4_mighty_bridge"),
+            "config",
+            "global_mapper.yaml",
+        ]
+    )
     actions.append(
-        IncludeLaunchDescription(
-            PythonLaunchDescriptionSource(
-                PathJoinSubstitution(
-                    [
-                        FindPackageShare("global_mapper_ros"),
-                        "launch",
-                        "global_mapper_node.launch.py",
-                    ]
-                )
-            ),
+        Node(
+            package="global_mapper_ros",
+            executable="global_mapper_node",
+            name="global_mapper_ros",
+            namespace=namespace,
+            output="screen",
             condition=IfCondition(LaunchConfiguration("launch_mapping")),
-            launch_arguments={
-                "quad": namespace,
-                "use_gazebo": "true",
-                "pose_topic": "state",
-                "odom_topic": "odom",
-            }.items(),
+            parameters=[
+                global_mapper_config,
+                {"use_sim_time": use_sim_time},
+            ],
+            remappings=[
+                ("depth_pointcloud_topic", "mid360_PointCloud2"),
+                ("pose_topic", "state"),
+                ("goal_topic", "/move_base_simple/goal"),
+                ("odom_topic", "odom"),
+                ("occupancy_grid_topic", "occupancy_grid"),
+                ("unknown_grid_topic", "unknown_grid"),
+                ("free_grid_topic", "free_grid"),
+                ("explored_volume", "explored_volume"),
+                ("frontier_grid_topic", "frontier_grid"),
+                ("distance_grid_topic", "distance_grid"),
+                ("cost_grid_topic", "cost_grid"),
+                ("path_topic", "path"),
+                ("sparse_path_topic", "sparse_path"),
+            ],
+            arguments=["--ros-args", "--log-level", "error"],
         )
     )
 
